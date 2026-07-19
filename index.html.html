@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Office 60%">
+<meta name="theme-color" content="#0E1420">
+<title>Office Attendance</title>
+<style>
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    min-height: 100vh; background: #0E1420; color: #EDEAE2;
+    font-family: 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: max(env(safe-area-inset-top), 20px) 16px 40px;
+  }
+  button { font-family: inherit; border: none; background: none; color: inherit; }
+  button:focus-visible { outline: 2px solid #F5A524; outline-offset: 3px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; max-width: 380px; margin-bottom: 8px; }
+  .navbtn { width: 40px; height: 40px; border-radius: 12px; border: 1px solid #243044; background: #161F2E; color: #A9B4C6; font-size: 22px; cursor: pointer; }
+  .eyebrow { font-size: 11px; letter-spacing: 0.22em; color: #6B7A93; text-transform: uppercase; text-align: center; }
+  .month { font-size: 22px; font-weight: 600; text-align: center; }
+
+  .dialwrap { position: relative; width: 220px; height: 220px; margin: 10px 0 6px; }
+  .dialwrap svg { position: absolute; inset: 0; }
+  #ring { transition: stroke-dashoffset 0.6s ease, stroke 0.4s ease; }
+  #punch {
+    position: absolute; inset: 22px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    background: radial-gradient(circle at 35% 30%, #1C2839, #121A28);
+    box-shadow: 0 6px 18px #00000066; cursor: pointer; color: #EDEAE2;
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+  }
+  #punch.in { background: radial-gradient(circle at 35% 30%, #23543F, #16281F); box-shadow: 0 0 24px #3DDC9733; }
+  #punch.hol { background: radial-gradient(circle at 35% 30%, #1E3A4E, #14212E); cursor: default; }
+  #punch:disabled { cursor: default; }
+  #pct { font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 40px; font-weight: 700; }
+  #ofdays { font-size: 12px; color: #8B99AF; }
+  #cta { margin-top: 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+
+  #status { font-size: 14px; color: #A9B4C6; margin-bottom: 6px; text-align: center; line-height: 1.5; }
+  #sync { font-size: 11px; margin-bottom: 14px; color: #5B6B85; text-align: center; }
+  .stats { display: flex; gap: 10px; margin: 2px 0 14px; }
+  .stat { background: #161F2E; border: 1px solid #243044; border-radius: 12px; padding: 10px 16px; text-align: center; min-width: 120px; }
+  .stat .num { font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 22px; font-weight: 700; }
+  .stat .lbl { font-size: 10px; letter-spacing: 0.12em; color: #6B7A93; text-transform: uppercase; margin-top: 2px; }
+  #sync.ok { color: #3DDC97; } #sync.err { color: #E5715B; } #sync.busy { color: #F5A524; }
+
+  .cal { width: 100%; max-width: 380px; }
+  .dow, .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .dow { margin-bottom: 6px; }
+  .dow div { text-align: center; font-size: 11px; color: #5B6B85; letter-spacing: 0.1em; }
+  .day {
+    aspect-ratio: 1; border-radius: 10px; font-size: 13px; border: 1.5px solid transparent;
+    background: #161F2E; color: #C6CEDC; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    transition: background 0.15s ease;
+  }
+  .day.wknd { background: transparent; color: #3A4658; cursor: default; }
+  .day.future { color: #66748A; }
+  .day.today { border-color: #F5A524; font-weight: 700; }
+  .day.office { background: #23543F; color: #3DDC97; font-weight: 700; }
+  .day.holiday { background: #1E3A4E; color: #5FA8D3; font-weight: 700; }
+  .day .tag { font-size: 8px; letter-spacing: 0.08em; }
+  .hint { font-size: 11px; color: #5B6B85; text-align: center; margin-top: 14px; line-height: 1.6; }
+  .hint .g { color: #3DDC97; } .hint .b { color: #5FA8D3; }
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #23303F; color: #EDEAE2; font-size: 13px; padding: 10px 16px; border-radius: 10px; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <button class="navbtn" id="prev" aria-label="Previous month">‹</button>
+    <div>
+      <div class="eyebrow">Office attendance</div>
+      <div class="month" id="monthLabel"></div>
+    </div>
+    <button class="navbtn" id="next" aria-label="Next month">›</button>
+  </div>
+
+  <div class="dialwrap">
+    <svg width="220" height="220" viewBox="0 0 220 220" style="transform: rotate(-90deg)">
+      <circle cx="110" cy="110" r="96" fill="none" stroke="#1D2736" stroke-width="10"/>
+      <circle id="ring" cx="110" cy="110" r="96" fill="none" stroke="#F5A524" stroke-width="10" stroke-linecap="round"/>
+    </svg>
+    <svg width="220" height="220" viewBox="0 0 220 220">
+      <circle id="tick" r="5" fill="#0E1420" stroke="#6B7A93" stroke-width="2"/>
+    </svg>
+    <button id="punch" aria-pressed="false">
+      <span id="pct">0%</span>
+      <span id="ofdays"></span>
+      <span id="cta"></span>
+    </button>
+  </div>
+
+  <div id="status"></div>
+  <div class="stats">
+    <div class="stat"><div class="num" id="statAttended">0</div><div class="lbl">Days attended</div></div>
+    <div class="stat"><div class="num" id="statLeft">0</div><div class="lbl">Left for 60%</div></div>
+  </div>
+  <div id="sync"></div>
+
+  <div class="cal">
+    <div class="dow"><div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div></div>
+    <div class="grid" id="grid"></div>
+    <div class="hint">Tap a weekday to cycle: <span class="g">office</span> → <span class="b">holiday</span> → clear.<br>Holidays (public or yours) reduce the month's workdays.</div>
+  </div>
+
+  <div id="toast" role="status"></div>
+
+<script>
+(function () {
+  // ================= CONFIG — fill these two in =================
+  var SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwB_rK6ePlWMkSL3G7m632liadg8MXG91K1yurnBz7etIwaxDBhFm3en96xLwpIYvKjmg/exec"; // Apps Script Web app URL (ends in /exec)
+  var SYNC_TOKEN = "viva"; // must match TOKEN in the Apps Script
+  // ===============================================================
+
+  var TARGET = 0.6, KEY = "attendance-days-v2";
+  var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  var pad = function (n) { return String(n).padStart(2, "0"); };
+  var iso = function (d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); };
+  var isWeekday = function (d) { return d.getDay() !== 0 && d.getDay() !== 6; };
+  var configured = SCRIPT_URL.indexOf("https://") === 0;
+
+  var days = {};
+  try { days = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
+
+  function saveLocal() {
+    try { localStorage.setItem(KEY, JSON.stringify(days)); } catch (e) {}
+  }
+
+  // ---- sync ----
+  var syncEl;
+  function setSync(cls, msg) { if (syncEl) { syncEl.className = cls; syncEl.textContent = msg; } }
+
+  var pushTimer = null;
+  function pushRemote() {
+    if (!configured) return;
+    clearTimeout(pushTimer);
+    setSync("busy", "Syncing…");
+    pushTimer = setTimeout(function () {
+      fetch(SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify({ token: SYNC_TOKEN, days: days })
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.ok) setSync("ok", "Synced to Google Sheets");
+        else setSync("err", "Sync rejected — check token. Saved on this phone.");
+      })
+      .catch(function () { setSync("err", "Sync failed — saved on this phone, will retry on next change"); });
+    }, 700);
+  }
+
+  function toast(msg) {
+    var t = document.getElementById("toast");
+    t.textContent = msg; t.classList.add("show");
+    setTimeout(function () { t.classList.remove("show"); }, 2600);
+  }
+
+  // Quick actions via URL: ?action=office | holiday | clear (applies to today)
+  function applyUrlAction() {
+    var action = new URLSearchParams(location.search).get("action");
+    if (!action) return;
+    history.replaceState({}, "", location.pathname); // don't re-apply on refresh
+    if (!isWeekday(today)) { toast("Today is a weekend — nothing marked"); return; }
+    if (action === "office") { days[todayStr] = "office"; toast("Marked today: in office \u2713"); }
+    else if (action === "holiday") { days[todayStr] = "holiday"; toast("Marked today: holiday"); }
+    else if (action === "clear") { delete days[todayStr]; toast("Cleared today"); }
+    else { toast("Unknown action: " + action); return; }
+    saveLocal(); pushRemote(); render();
+  }
+
+  function loadRemote() {
+    if (!configured) { setSync("", "Sync not configured — data saved on this phone only"); applyUrlAction(); return; }
+    setSync("busy", "Loading from Google Sheets…");
+    fetch(SCRIPT_URL + "?token=" + encodeURIComponent(SYNC_TOKEN))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.days) {
+          days = j.days; saveLocal(); render();
+          setSync("ok", "Synced to Google Sheets");
+        } else {
+          setSync("err", "Couldn't read sheet — check token. Using data on this phone.");
+        }
+        applyUrlAction();
+      })
+      .catch(function () { setSync("err", "Offline — using data on this phone"); applyUrlAction(); });
+  }
+
+  var today = new Date();
+  var view = { y: today.getFullYear(), m: today.getMonth() };
+  var todayStr = iso(today);
+
+  function change(mutate) { mutate(); saveLocal(); pushRemote(); render(); }
+
+  function cycle(ds) {
+    change(function () {
+      if (!days[ds]) days[ds] = "office";
+      else if (days[ds] === "office") days[ds] = "holiday";
+      else delete days[ds];
+    });
+  }
+
+  function render() {
+    var y = view.y, m = view.m;
+    var daysInM = new Date(y, m + 1, 0).getDate();
+    var totalWk = 0, attended = 0, holidays = 0;
+    for (var d = 1; d <= daysInM; d++) {
+      var dt0 = new Date(y, m, d);
+      if (!isWeekday(dt0)) continue;
+      var st0 = days[iso(dt0)];
+      if (st0 === "holiday") { holidays++; continue; }
+      totalWk++;
+      if (st0 === "office") attended++;
+    }
+    var targetDays = Math.ceil(totalWk * TARGET);
+    var pct = totalWk ? attended / totalWk : 0;
+    var remaining = Math.max(0, targetDays - attended);
+    var onTarget = totalWk > 0 && attended >= targetDays;
+    var green = "#3DDC97", amber = "#F5A524";
+
+    document.getElementById("monthLabel").textContent = MONTHS[m] + " " + y;
+
+    var R = 96, C = 2 * Math.PI * R;
+    var ring = document.getElementById("ring");
+    ring.setAttribute("stroke-dasharray", C);
+    ring.setAttribute("stroke-dashoffset", C * (1 - Math.min(pct, 1)));
+    ring.setAttribute("stroke", onTarget ? green : amber);
+    var a = (TARGET * 360 - 90) * Math.PI / 180;
+    var tick = document.getElementById("tick");
+    tick.setAttribute("cx", 110 + R * Math.cos(a));
+    tick.setAttribute("cy", 110 + R * Math.sin(a));
+
+    var viewingCurrent = y === today.getFullYear() && m === today.getMonth();
+    var todayState = days[todayStr];
+    var todayWk = isWeekday(today);
+    var punch = document.getElementById("punch");
+    punch.className = todayState === "office" ? "in" : todayState === "holiday" ? "hol" : "";
+    punch.disabled = !viewingCurrent || !todayWk || todayState === "holiday";
+    punch.setAttribute("aria-pressed", todayState === "office");
+    document.getElementById("pct").textContent = Math.round(pct * 100) + "%";
+    document.getElementById("pct").style.color = onTarget ? green : "#EDEAE2";
+    document.getElementById("ofdays").textContent = "of " + totalWk + " workdays";
+    var cta = document.getElementById("cta");
+    if (!viewingCurrent) { cta.textContent = ""; }
+    else if (!todayWk) { cta.textContent = "Weekend"; cta.style.color = "#5B6B85"; }
+    else if (todayState === "holiday") { cta.textContent = "On holiday"; cta.style.color = "#5B6B85"; }
+    else if (todayState === "office") { cta.textContent = "\u2713 In office today"; cta.style.color = green; }
+    else { cta.textContent = "Tap to punch in"; cta.style.color = amber; }
+
+    var s = onTarget
+      ? 'Target met — <b style="color:' + green + '">' + attended + "</b> of " + targetDays + " days"
+      : '<b style="color:' + amber + '">' + attended + "</b> of " + targetDays + " target days · " + remaining + " more to hit 60%";
+    if (holidays) s += '<div style="font-size:12px;color:#5FA8D3;margin-top:4px">' + holidays + " holiday" + (holidays > 1 ? "s" : "") + " excluded from workdays</div>";
+    document.getElementById("status").innerHTML = s;
+
+    var sa = document.getElementById("statAttended");
+    var sl = document.getElementById("statLeft");
+    sa.textContent = attended;
+    sa.style.color = onTarget ? green : "#EDEAE2";
+    sl.textContent = remaining;
+    sl.style.color = onTarget ? green : amber;
+
+    var grid = document.getElementById("grid");
+    grid.innerHTML = "";
+    var firstDow = new Date(y, m, 1).getDay();
+    for (var i = 0; i < firstDow; i++) grid.appendChild(document.createElement("div"));
+    for (var d2 = 1; d2 <= daysInM; d2++) {
+      (function (d2) {
+        var dt = new Date(y, m, d2);
+        var ds = iso(dt);
+        var wk = isWeekday(dt);
+        var st = days[ds];
+        var btn = document.createElement("button");
+        btn.className = "day" + (wk ? "" : " wknd") + (ds === todayStr ? " today" : "") +
+          (dt > today && ds !== todayStr ? " future" : "") +
+          (st === "office" ? " office" : st === "holiday" ? " holiday" : "");
+        btn.disabled = !wk;
+        btn.innerHTML = "<span>" + d2 + "</span>" + (st === "holiday" ? '<span class="tag">HOL</span>' : "");
+        btn.setAttribute("aria-label", MONTHS[m] + " " + d2 + (st === "office" ? ", in office" : st === "holiday" ? ", holiday" : ""));
+        if (wk) btn.addEventListener("click", function () { cycle(ds); });
+        grid.appendChild(btn);
+      })(d2);
+    }
+  }
+
+  document.getElementById("punch").addEventListener("click", function () {
+    change(function () {
+      if (days[todayStr] === "office") delete days[todayStr];
+      else days[todayStr] = "office";
+    });
+  });
+  document.getElementById("prev").addEventListener("click", function () { var d = new Date(view.y, view.m - 1, 1); view = { y: d.getFullYear(), m: d.getMonth() }; render(); });
+  document.getElementById("next").addEventListener("click", function () { var d = new Date(view.y, view.m + 1, 1); view = { y: d.getFullYear(), m: d.getMonth() }; render(); });
+
+  syncEl = document.getElementById("sync");
+  render();
+  loadRemote();
+})();
+</script>
+</body>
+</html>
